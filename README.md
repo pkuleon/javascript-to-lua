@@ -10,8 +10,8 @@ This project compiles JavaScript to Lua 5.1 source code, and uses a small runtim
 ## Installation
 
 ```sh
-$ npm install -g lua-colony
-$ lua-colony examples/helloworld.js --bundle | lua
+$ npm install -g js-to-lua
+$ js-to-lua examples/helloworld.js --bundle | lua
 Hello world. Welcome to Lua Colony!
 ```
 
