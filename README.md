@@ -1,13 +1,10 @@
-# Lua Colony, a JavaScript-to-Lua source compiler
+# A JavaScript-to-Lua source compiler
 
 
-This project is base on the [tcr](https://github.com/tcr) 's lua-colony. But the source was removed.
-I will proceed to implement and maintain the project on the next days.
+This project is base on the [tcr](https://github.com/tcr) 's lua-colony. It is an awesome project, but the source was removed. I give it a new name "javascript-to-lua", and will proceed to implement and maintain the project on the next days.
 
 
-Lua Colony compiles JavaScript to Lua 5.1 source code, and uses a small runtime library.
-
-**Lua Colony is wicked slow.** It abuses the `debug` library heavily to emulate JavaScript semantics. Sacrificing speed, you get **an embeddable JavaScript engine in ANSI C.** Just be aware, Lua Colony **may not play nice with Lua's ecosystem**, so it should not be considered a way to write Lua code.
+This project compiles JavaScript to Lua 5.1 source code, and uses a small runtime library.
 
 
 ## Installation
