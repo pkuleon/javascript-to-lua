@@ -24,9 +24,11 @@ debug.setmetatable("", str_mt)
 debug.setmetatable(nil, nil_mt)
 
 
-local f, rex = pcall(require, "rex_pcre")
-local cjson = pcall(require, "cjson")
+local is_rex, rex = pcall(require, "rex_pcre"), {}
+if (is_rex) then cjson = require("rex_pcre") end
 
+local is_ccjson, cjson = pcall(require, "cjson"), {}
+if (is_ccjson) then cjson = require("cjson") end
 
 -- nil metatable
 
@@ -179,6 +181,31 @@ _JS._new = function (f, ...)
     local o = {}
     setmetatable(o, {__index=f.prototype})
     local r = f(o, ...)
+    
+    local mt ={}
+    mt.__index = function(self, key) 
+        -- read only
+        if rawget(f.prototype, key) then
+            return rawget(f.prototype, key)
+        elseif rawget(self, "get__" .. key) then
+            return (rawget(self, "get__" .. key))(f.prototype)
+        elseif f[tostring(key)] then
+            --print('key.....', key, obj_proto[key], ' ')
+            return f[tostring(key)]
+        else
+            return rawget(self, key)
+        end
+    end
+    mt.__newindex = function(self, key, value) 
+        if rawget(self, "set__" .. key) then
+            local fn = rawget(self, "set__" .. key)
+            fn(self, value)
+        else
+            rawset(self, key, value) 
+        end
+    end
+    setmetatable(o, mt)
+    
     if r then return r end
     return o
 end
@@ -226,24 +253,39 @@ str_proto.indexOf = function (str, needle)
     if ret == null then return -1; else return ret - 1; end
 end
 str_proto.lastIndexOf = function(str, s, i)
-	if s=="." then s="%." end
-	if i==nil then i=0 end
-	local n=-1
-	repeat
-		i=str_proto.indexOf(str,s,i)
-		if i>-1 then n=i end
-		i=i+1
-	until i<=0
-	return n
+    if s=="." then s="%." end
+    if i==nil then i=0 end
+    local n=-1
+    repeat
+        i=str_proto.indexOf(str,s,i)
+        if i>-1 then n=i end
+        i=i+1
+    until i<=0
+    return n
 end
 str_proto.split = function (str, sep, max)
+	--if _G.type(str)~="string" then return str.split(str,s,i) end
+    --[[
+	local arr=_JS._arr({})
+	local n=0
+	repeat
+		local b=n
+		--n=String.indexOf(str,sep,b)
+		n=str.indexOf(sep,b)
+		if n==-1 then n=#str end
+		--arr:push(String.slice(str,b,n))
+		arr:push(str.slice(b,n))
+		n=n+1
+	until n>=#str
+	return arr
+    --]]
     if sep == '' then return _JS._arr({}) end
 
     local ret = {}
     if string.len(str) > 0 then
         max = max or -1
 
-        local i, start=1, 1
+        local i, start=0, 1
         local first, last = string.find(str, sep, start, true)
         while first and max ~= 0 do
             ret[i] = string.sub(str, start, first-1)
@@ -256,16 +298,17 @@ str_proto.split = function (str, sep, max)
     return _JS._arr(ret)
 end
 str_proto.match = function (ths, str)
-    if (t.constructor and t.constructor.name == "RegExp") then
-        return t.rex.gsub(ths, str, str2)
+    if (str.constructor and str.source) then
+        return rex.gmatch(ths, tostring(str.source))
     else
-        return string.gsub(ths, str, str2)
+        return string.gmatch(ths, str)
     end
 end
 str_proto.replace = function (ths, str, str2)
-    if (str.constructor and str.constructor.name == "RegExp") then
+    --if (str.constructor and str.constructor.name == "RegExp") then
+    if (str.constructor and str.source) then
         -- print('------   ', rex.gsub('{("name"):("a"),("desc"):(2)}', "\\((.*?)\\):\\((.*?)\\)", '[$1]=$2'))
-        
+        --return string.gsub(ths, str, str2)
         return rex.gsub(ths, tostring(str.source), str2)
     else
         return string.gsub(ths, str, str2)
@@ -307,29 +350,11 @@ end
 obj_proto.hasOwnProperty = function (ths, p)
     return rawget(ths, p) ~= nil
 end
-obj_proto.__defineAttribute__ = function(ths, n)
-    --[[
-    if rawget(ths, tostring(n)) == nil then
-        rawset(ths, tostring(n), function(this, s)
-            local _set_ = rawget(ths, "set__" + tostring(n))
-            local _get_ = rawget(ths, "get__" + tostring(n))
-            --if arg ~= nil and #arg > 0 then
-            if s ~= nil then
-                if _set_ ~= nil then return _set_(this, s) end
-            else
-                if _get_ ~= nil then return _get_(this, s) end
-            end 
-        end)
-    end
-    --]]
-end
 obj_proto.__defineGetter__ = function(ths, n, fn)
     rawset(ths, "get__" + tostring(n), fn)
-    --obj_proto.__defineAttribute__(ths, n)
 end
 obj_proto.__defineSetter__ = function(ths, n, fn)
     rawset(ths, "set__" + tostring(n), fn)
-    --obj_proto.__defineAttribute__(ths, n)
 end
 
 --[[
@@ -390,7 +415,9 @@ arr_proto.push = function (ths, elem)
   return ths.length
 end
 arr_proto.pop = function (ths)
-    return table.remove(ths, ths.length-1)
+    local ret = ths[ths.length-1]
+    table.remove(ths, ths.length-1)
+    return ret
 end
 arr_proto.shift = function (ths)
     local ret = ths[0]
@@ -435,7 +462,30 @@ arr_proto.join = function (ths, str)
     end
     return string.sub(_r, 1, string.len(_r) - string.len(str))
 end
-
+arr_proto.sort = function (ths, compare)
+    if compare == nil then
+        table.sort(ths, function(a,b)
+            return a < b
+        end)
+    else
+        table.sort(ths, function(a,b)
+            compare(nil,a,b)
+        end)
+    end
+    -- local count = ths.length -1
+    -- while count > 0 do
+        -- local k = 0
+        -- for i=0,count-1 do 
+            -- if ths[i] > ths[i + 1] then 
+                -- local t = ths[i]
+                -- ths[i] = ths[i + 1]
+                -- ths[i + 1] = t
+                -- k = i 
+            -- end 
+        -- end 
+        -- count = k
+    -- end
+end
 --[[
 Globals
 ]]--
@@ -468,6 +518,7 @@ end)
 -- Number
 
 _JS.Number = luafunctor(function (str)
+    if str == nil then return 0 end
     return tonumber(str)
 end)
 _JS.Number.prototype = num_proto
@@ -475,6 +526,7 @@ _JS.Number.prototype = num_proto
 -- String
 
 _JS.String = luafunctor(function (str)
+    if str == nil then return "null" end
     return tostring(str)
 end)
 _JS.String.prototype = str_proto
