@@ -2,7 +2,6 @@
 
 var fs = require('fs')
   , falafel = require('falafel');
-//  , colors = require('colors');
 
 
 /** 
@@ -10,14 +9,15 @@ var fs = require('fs')
  */
 
 var keywords = ['end', 'do', 'nil'];
-var mask = ['string', 'math']; //, 'print'];
+var mask = ['undefined'];//['string', 'math']; //, 'print'];
 var locals = ['this', 'global', 'Object', 'Array', 'Number', 'String', 'RegExp', 'Date', 'Math', 'JSON', 'require', 'console', 'sleep', 'null'];
 
 function fixIdentifiers (str) {
   if (keywords.indexOf(str) > -1) {
     return '_K_' + str;
   }
-  return str.replace(/_/g, '__').replace(/\$/g, '_S');
+  //return str.replace(/_/g, '__').replace(/\$/g, '_S');
+  return str.replace(/\$/g, '_S');
 }
 
 function uniqueStrings (arr) {
@@ -188,6 +188,11 @@ function colonize (node) {
         node.update(node.left.source() + ' and ' + node.right.source());
       } else if (node.operator == '||') {
         node.update(node.left.source() + ' or ' + node.right.source());
+      }
+
+      // Can't have and/or be statements.
+      if (node.parent.type == 'ExpressionStatement') {
+        node.update('if ' + node.source() + ' then end');
       }
       break;
 
@@ -373,7 +378,8 @@ function colonize (node) {
       } else {
         node.update(node.callee.source() + '(' + ['global'].concat(node.arguments.map(function (arg) {
         //node.update(node.callee.source() + '(' + node.arguments.map(function (arg) {
-          return arg.source()
+          return (arg.source && arg.source()) || arg;
+          //return arg.source()
         })).join(', ') + ')')
       }
       break;
@@ -569,6 +575,94 @@ if (process.argv.length < 3) {
   process.exit(1);
 }
 
+/* 
+    This function is loosely based on the one found here:
+    http://www.weanswer.it/blog/optimize-css-javascript-remove-comments-php/
+*/
+function removeComments(str) {
+    str = ('__' + str + '__').split('');
+    var mode = {
+        singleQuote: false,
+        doubleQuote: false,
+        regex: false,
+        blockComment: false,
+        lineComment: false,
+        condComp: false 
+    };
+    for (var i = 0, l = str.length; i < l; i++) {
+ 
+        if (mode.regex) {
+            if (str[i] === '/' && str[i-1] !== '\\') {
+                mode.regex = false;
+            }
+            continue;
+        }
+ 
+        if (mode.singleQuote) {
+            if (str[i] === "'" && str[i-1] !== '\\') {
+                mode.singleQuote = false;
+            }
+            continue;
+        }
+ 
+        if (mode.doubleQuote) {
+            if (str[i] === '"' && str[i-1] !== '\\') {
+                mode.doubleQuote = false;
+            }
+            continue;
+        }
+ 
+        if (mode.blockComment) {
+            if (str[i] === '*' && str[i+1] === '/') {
+                str[i+1] = '';
+                mode.blockComment = false;
+            }
+            str[i] = '';
+            continue;
+        }
+ 
+        if (mode.lineComment) {
+            if (str[i+1] === '\n' || str[i+1] === '\r') {
+                mode.lineComment = false;
+            }
+            str[i] = '';
+            continue;
+        }
+ 
+        if (mode.condComp) {
+            if (str[i-2] === '@' && str[i-1] === '*' && str[i] === '/') {
+                mode.condComp = false;
+            }
+            continue;
+        }
+ 
+        mode.doubleQuote = str[i] === '"';
+        mode.singleQuote = str[i] === "'";
+ 
+        if (str[i] === '/') {
+ 
+            if (str[i+1] === '*' && str[i+2] === '@') {
+                mode.condComp = true;
+                continue;
+            }
+            if (str[i+1] === '*') {
+                str[i] = '';
+                mode.blockComment = true;
+                continue;
+            }
+            if (str[i+1] === '/') {
+                str[i] = '';
+                mode.lineComment = true;
+                continue;
+            }
+            mode.regex = true;
+ 
+        }
+ 
+    }
+    return str.join('').slice(2, -2);
+}
+
 function to_lua_file(src_path, rename_path, is_print_source){
   if (!fs.existsSync(src_path)){
     console.error('"'+src_path+'"', 'is not exists.');
@@ -582,7 +676,8 @@ function to_lua_file(src_path, rename_path, is_print_source){
   var filename = src_path.substr(0, src_path.lastIndexOf('.')),
     out_path = rename_path ? rename_path : (filename + '.lua');
 
-  out = String(out).replace(/\/\//g, '--');
+  //out = String(out).replace(/\/\*/g, '--[[').replace(/\*\//g, ']]--').replace(/\/\//g, '--');
+  out = removeComments(String(out));//.replace(/\/\//g, '--');
   
   if (is_print_source) {
     console.log(out);
